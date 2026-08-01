@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: Also submit this build to extensions.gnome.org
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact: ${{ steps.pack.outputs.uuid }}-${{ steps.pack.outputs.version }}
+      version: ${{ steps.pack.outputs.version }}
+      released: ${{ steps.release.outputs.missing }}
+    # Only needed by the release step below; the default token is read-only
+    # in repositories that were tightened after creation.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      # gjs plus the NetworkManager typelib is everything the engine tests
+      # need. `gnome-extensions pack` is deliberately not used: it lives in the
+      # gnome-shell package, which would drag a whole desktop onto the runner.
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gjs gir1.2-nm-1.0 libglib2.0-bin zip
+
+      - name: Check metadata
+        run: python3 tools/check-metadata.py
+
+      - name: Compile the GSettings schema
+        run: glib-compile-schemas --strict --dry-run schemas/
+
+      - name: Engine tests
+        run: gjs -m tests/engine-test.js
+
+      - name: Syntax-check every module
+        run: |
+          for file in extension.js prefs.js lib/*.js; do
+            cp "$file" "/tmp/$(basename "$file" .js).mjs"
+            node --check "/tmp/$(basename "$file" .js).mjs"
+            echo "ok  $file"
+          done
+
+      - name: Build the zip
+        id: pack
+        run: |
+          uuid=$(python3 -c "import json;print(json.load(open('metadata.json'))['uuid'])")
+          version=$(python3 -c "import json;print(json.load(open('metadata.json')).get('version-name','0'))")
+          rm -rf build dist && mkdir -p build dist
+          cp -r metadata.json extension.js prefs.js lib schemas LICENSE README.md build/
+          rm -f build/schemas/gschemas.compiled   # the site compiles this itself
+          (cd build && zip -qr "../dist/$uuid.shell-extension.zip" .)
+          unzip -l "dist/$uuid.shell-extension.zip"
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.uuid }}-${{ steps.pack.outputs.version }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+      # Artifacts expire; release assets do not. The rule is simply that there
+      # must be a release for whatever version-name metadata.json currently
+      # declares — so bumping version-name is the only thing that has to be
+      # done by hand, and a release that never happened is repaired by the next
+      # push rather than staying missing.
+      - name: Is a release for this version missing?
+        id: release
+        if: github.ref == 'refs/heads/main'
+        run: |
+          tag="v${{ steps.pack.outputs.version }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "missing=no" >> "$GITHUB_OUTPUT"
+            echo "$tag is already released; nothing to do"
+          else
+            echo "missing=yes" >> "$GITHUB_OUTPUT"
+            echo "$tag has no release yet; creating one"
+          fi
+
+      - name: Release
+        if: steps.release.outputs.missing == 'yes'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.tag }}
+          files: dist/*.zip
+          generate_release_notes: true
+          make_latest: true
+
+      # A tag pushed by hand still gets its zip, so tagging keeps working for
+      # anything the version-name rule does not cover.
+      - name: Attach the zip to a hand-pushed tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+
+  # A release just appeared, so there is a new version to submit. Kept as its
+  # own job for the `environment`, which is what makes the approval gate
+  # possible: environment secrets are unreadable until its rules pass.
+  #
+  # Deliberately not `on: release`. GitHub does not raise workflow events for
+  # things the built-in GITHUB_TOKEN creates, so a release made by the job
+  # above would never trigger one.
+  # Two ways in. Actions -> CI -> Run workflow, with the submit box ticked,
+  # sends whatever main currently builds. Setting the repository variable
+  # AUTO_SUBMIT to "true" additionally sends every new release the moment it is
+  # made — off unless asked for, because submitting cannot be taken back.
+  submit:
+    needs: build
+    if: >-
+      inputs.submit ||
+      (needs.build.outputs.released == 'yes' && vars.AUTO_SUBMIT == 'true')
+    runs-on: ubuntu-latest
+    environment: extensions.gnome.org
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: dist
+
+      - run: pip install --quiet requests
+
+      - name: Submit to extensions.gnome.org
+        env:
+          EGO_USERNAME: ${{ secrets.EGO_USERNAME }}
+          EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
+        run: python3 tools/publish-ego.py dist/*.shell-extension.zip

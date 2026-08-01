@@ -1,0 +1,9 @@
+schemas/gschemas.compiled
+*.shell-extension.zip
+build/
+dist/
+__pycache__/
+
+# never commit credentials
+*token*
+.env

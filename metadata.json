@@ -1,0 +1,18 @@
+{
+  "name": "Split Routing",
+  "description": "Use two networks at the same time: route chosen subnets out chosen network cards, and pick which card carries the default route.\n\nEverything is configured from the settings UI. Rules are (subnet, card) pairs — IPv4 and IPv6 are both supported — and gateways are detected automatically per card.\n\nAll changes go through NetworkManager over D-Bus: no root, no scripts, no subprocesses. Only the running connection is changed (NetworkManager reapply), never a saved profile, so a reboot, a NetworkManager restart or reconnecting a card returns the machine to its normal routing. Switching back undoes exactly what was added: routes you already had are left alone and each card's previous never-default value is restored.",
+  "uuid": "split-routing@tannc28",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51"
+  ],
+  "settings-schema": "org.gnome.shell.extensions.split-routing",
+  "url": "https://github.com/tannc28/split-routing",
+  "version": 1,
+  "version-name": "1.0.0"
+}

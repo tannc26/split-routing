@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.split-routing"
+          path="/org/gnome/shell/extensions/split-routing/">
+    <key name="rules" type="s">
+      <default>"[]"</default>
+      <summary>Routing rules</summary>
+      <description>
+        JSON array of {"subnet":"CIDR","device":"iface"}. Each subnet is routed
+        out the chosen network card while split routing is on. IPv4 and IPv6
+        subnets are both accepted. Ships empty; filled in from the settings UI.
+      </description>
+    </key>
+    <key name="default-device" type="s">
+      <default>""</default>
+      <summary>Default-route card</summary>
+      <description>
+        Interface name of the card that should carry the default route while
+        split routing is on. Empty means the default route is left untouched.
+      </description>
+    </key>
+    <key name="undo-record" type="s">
+      <default>"{}"</default>
+      <summary>Undo record</summary>
+      <description>
+        JSON description of the runtime changes this extension actually made:
+        per card, the routes it added and the previous never-default value it
+        overwrote. Written by the extension after each change and used to undo
+        exactly those changes, so routes and settings the user already had are
+        never removed. Not meant to be edited by hand.
+      </description>
+    </key>
+  </schema>
+</schemalist>
