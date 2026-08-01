@@ -95,7 +95,7 @@ jobs:
 
       - name: Release
         if: steps.release.outputs.missing == 'yes'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: ${{ steps.release.outputs.tag }}
@@ -107,7 +107,7 @@ jobs:
       # anything the version-name rule does not cover.
       - name: Attach the zip to a hand-pushed tag
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*.zip
           generate_release_notes: true
